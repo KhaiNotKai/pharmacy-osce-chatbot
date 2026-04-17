@@ -3,12 +3,13 @@ import json
 import random
 import html
 from pathlib import Path
-from typing import Dict, List, Any, Tuple
+from typing import Dict, List, Any
 from datetime import datetime
 
 import streamlit as st
 from rapidfuzz import fuzz
 from google import genai
+
 
 # =========================
 # Page config
@@ -24,6 +25,7 @@ st.set_page_config(
 # =========================
 DATA_DIR = Path("data")
 CASES_FILE = DATA_DIR / "cases.jsonl"
+SCRIPTS_FILE = DATA_DIR / "mock_scripts.jsonl"
 BEHAVIOUR_FILE = DATA_DIR / "patient_behaviour_rules.jsonl"
 OVERLAY_FILE = DATA_DIR / "retrieval_overlay.jsonl"
 ANSWER_KEY_FILE = DATA_DIR / "assessor_answer_key.jsonl"
@@ -71,7 +73,7 @@ st.markdown("""
 }
 
 #chatbox {
-    height: 68vh;
+    height: 66vh;
     overflow-y: auto;
     background: #fafafa;
     border: 1px solid #ececec;
@@ -164,8 +166,29 @@ st.markdown("""
     margin-top: 12px;
     margin-bottom: 8px;
 }
+
+.script-card {
+    background: #ffffff;
+    border: 1px solid #e5e7eb;
+    border-radius: 16px;
+    padding: 18px;
+    margin-top: 8px;
+    margin-bottom: 12px;
+}
+
+.script-warning {
+    font-size: 0.9rem;
+    color: #92400e;
+    margin-bottom: 14px;
+}
+
+.script-title {
+    font-weight: 700;
+    margin-bottom: 10px;
+}
 </style>
 """, unsafe_allow_html=True)
+
 
 # =========================
 # Helpers
@@ -200,7 +223,14 @@ def load_jsonl(path: str) -> List[Dict[str, Any]]:
 
 
 def safe_load_data():
-    needed = [CASES_FILE, BEHAVIOUR_FILE, OVERLAY_FILE, ANSWER_KEY_FILE, SIM_RULES_FILE]
+    needed = [
+        CASES_FILE,
+        SCRIPTS_FILE,
+        BEHAVIOUR_FILE,
+        OVERLAY_FILE,
+        ANSWER_KEY_FILE,
+        SIM_RULES_FILE
+    ]
     missing = [str(p) for p in needed if not p.exists()]
     if missing:
         st.error("Missing required files:\n\n" + "\n".join(missing))
@@ -208,6 +238,7 @@ def safe_load_data():
 
     return (
         load_jsonl(str(CASES_FILE)),
+        load_jsonl(str(SCRIPTS_FILE)),
         load_jsonl(str(BEHAVIOUR_FILE)),
         load_jsonl(str(OVERLAY_FILE)),
         load_jsonl(str(ANSWER_KEY_FILE)),
@@ -307,7 +338,8 @@ def case_categories(case: Dict[str, Any], overlay: Dict[str, Any]) -> List[str]:
     if any("mental" in x for x in tags.union(triage_tags)):
         cats.add("mental_health_or_distress_cases")
 
-    if any("copayment" in x or "co_payment" in x or "psc" in x or "csc" in x or "special_authority" in x for x in legal_tags.union(tags)):
+    if any("copayment" in x or "co_payment" in x or "psc" in x or "csc" in x or "special_authority" in x
+           for x in legal_tags.union(tags)):
         cats.add("funding_cases")
 
     if any(x in tags for x in ["affordability"]):
@@ -341,7 +373,7 @@ def applicable_sim_rules(case: Dict[str, Any], overlay: Dict[str, Any], sim_rule
 
 def build_system_prompt(case: Dict[str, Any], overlay: Dict[str, Any], behaviour: Dict[str, Any], sim_rules: List[Dict[str, Any]]) -> str:
     rules_text = "\n".join(
-        [f"- [{r.get('priority','medium').upper()}] {r.get('rule_text','')}" for r in sim_rules[:40]]
+        [f"- [{r.get('priority', 'medium').upper()}] {r.get('rule_text', '')}" for r in sim_rules[:40]]
     )
 
     return f"""
@@ -515,12 +547,57 @@ def conversation_transcript(messages: List[Dict[str, str]]) -> str:
     return "\n".join(lines)
 
 
+def render_mock_script(script_data: Dict[str, Any]):
+    script_type = script_data.get("script_type", "standard")
+
+    title = "Standard prescription"
+    if script_type == "controlled_drug":
+        title = "Controlled drug prescription"
+    elif script_type == "nzeps":
+        title = "NZePS prescription"
+    elif script_type == "emailed_non_nzeps":
+        title = "Emailed non NZePS prescription"
+    elif script_type == "faxed_controlled_drug":
+        title = "Faxed controlled drug prescription"
+
+    st.markdown("### 📄 Mock prescription")
+    st.markdown(
+        f"""
+        <div class="script-card">
+            <div class="script-title">{title}</div>
+            <div class="script-warning">Training script only. Not a real prescription.</div>
+
+            <div><strong>Prescriber:</strong> {html.escape(str(script_data.get("prescriber_name", "")))}</div>
+            <div><strong>Prescriber address:</strong> {html.escape(str(script_data.get("prescriber_address", "")))}</div>
+            <div><strong>Prescriber phone:</strong> {html.escape(str(script_data.get("prescriber_phone", "")))}</div>
+
+            <hr style="margin:12px 0;">
+
+            <div><strong>Patient:</strong> {html.escape(str(script_data.get("patient_name", "")))}</div>
+            <div><strong>Patient address:</strong> {html.escape(str(script_data.get("patient_address", "")))}</div>
+            <div><strong>Date:</strong> {html.escape(str(script_data.get("date", "")))}</div>
+
+            <hr style="margin:12px 0;">
+
+            <div><strong>Medicine:</strong> {html.escape(str(script_data.get("medicine", "")))}</div>
+            <div><strong>Strength:</strong> {html.escape(str(script_data.get("strength", "")))}</div>
+            <div><strong>Directions:</strong> {html.escape(str(script_data.get("directions", "")))}</div>
+            <div><strong>Quantity:</strong> {html.escape(str(script_data.get("quantity", "")))}</div>
+            <div><strong>Repeats:</strong> {html.escape(str(script_data.get("repeats", "")))}</div>
+            <div><strong>Special notes:</strong> {html.escape(str(script_data.get("notes", "")))}</div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+
 # =========================
 # Load data and client
 # =========================
-cases, behaviours, overlays, answer_keys, sim_rules = safe_load_data()
+cases, scripts, behaviours, overlays, answer_keys, sim_rules = safe_load_data()
 overlay_map = {o["case_id"]: o for o in overlays}
 answer_map = {a["case_id"]: a for a in answer_keys}
+script_map = {s["mock_script_id"]: s for s in scripts}
 client = get_gemini_client()
 
 # =========================
@@ -546,6 +623,9 @@ if "start_mode" not in st.session_state:
 
 if "random_case_id" not in st.session_state:
     st.session_state.random_case_id = None
+
+if "show_mock_script" not in st.session_state:
+    st.session_state.show_mock_script = False
 
 # =========================
 # Access gate
@@ -609,7 +689,7 @@ with choice_col1:
     st.markdown("""
     <div class="choice-card">
         <div class="choice-card-title">🎯 Pick a case myself</div>
-        <div class="choice-card-sub">Choose a specific case from the full list</div>
+        <div class="choice-card-sub">Choose a specific case from the list</div>
     </div>
     """, unsafe_allow_html=True)
     if st.button("Pick a case", use_container_width=True):
@@ -618,6 +698,7 @@ with choice_col1:
         st.session_state.roleplay_started = False
         st.session_state.messages = []
         st.session_state.feedback_text = None
+        st.session_state.show_mock_script = False
 
 with choice_col2:
     st.markdown("""
@@ -631,6 +712,7 @@ with choice_col2:
         st.session_state.roleplay_started = False
         st.session_state.messages = []
         st.session_state.feedback_text = None
+        st.session_state.show_mock_script = False
         if filtered_cases:
             chosen = random.choice(filtered_cases)
             st.session_state.random_case_id = chosen["case_id"]
@@ -651,6 +733,11 @@ if st.session_state.start_mode == "manual":
 
         picked = st.selectbox("Select a case", labels, index=default_index)
         selected_case = filtered_cases[labels.index(picked)]
+        if st.session_state.selected_case_id != selected_case["case_id"]:
+            st.session_state.show_mock_script = False
+            st.session_state.messages = []
+            st.session_state.feedback_text = None
+            st.session_state.roleplay_started = False
         st.session_state.selected_case_id = selected_case["case_id"]
 
 elif st.session_state.start_mode == "random":
@@ -667,6 +754,7 @@ elif st.session_state.start_mode == "random":
                     st.session_state.roleplay_started = False
                     st.session_state.messages = []
                     st.session_state.feedback_text = None
+                    st.session_state.show_mock_script = False
                     st.rerun()
 
 if not selected_case and st.session_state.selected_case_id:
@@ -680,6 +768,10 @@ overlay = find_overlay(selected_case["case_id"], overlays)
 answer_key = find_answer_key(selected_case["case_id"], answer_keys)
 behaviour = resolve_behaviour(selected_case.get("patient_persona", ""), behaviours)
 sim_rule_set = applicable_sim_rules(selected_case, overlay, sim_rules)
+
+selected_script = None
+if selected_case.get("mock_script_id"):
+    selected_script = script_map.get(selected_case["mock_script_id"])
 
 # =========================
 # Case banner
@@ -702,6 +794,19 @@ st.markdown(
 )
 
 # =========================
+# Mock script
+# =========================
+if selected_script:
+    script_col1, script_col2 = st.columns([1, 4])
+
+    with script_col1:
+        if st.button("📄 View mock script", use_container_width=True):
+            st.session_state.show_mock_script = not st.session_state.show_mock_script
+
+    if st.session_state.show_mock_script:
+        render_mock_script(selected_script["data"])
+
+# =========================
 # Buttons
 # =========================
 b1, b2, b3 = st.columns([1, 1, 1])
@@ -721,6 +826,7 @@ with b2:
         st.session_state.messages = []
         st.session_state.feedback_text = None
         st.session_state.roleplay_started = False
+        st.session_state.show_mock_script = False
         st.rerun()
 
 with b3:
@@ -745,6 +851,8 @@ if admin_mode:
         st.write("**Reveal rules:**", selected_case.get("reveal_rules", []))
         st.write("**Pharmacy issue:**", selected_case.get("pharmacy_issue", ""))
         st.write("**Answer key:**", answer_key)
+        if selected_script:
+            st.write("**Mock script ID:**", selected_case.get("mock_script_id"))
         st.markdown("</div>", unsafe_allow_html=True)
 
 # =========================
