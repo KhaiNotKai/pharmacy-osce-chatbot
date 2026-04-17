@@ -771,6 +771,34 @@ selected_script = None
 if selected_case.get("mock_script_id"):
     selected_script = script_map.get(selected_case["mock_script_id"])
 
+st.write("Case ID:", selected_case.get("case_id"))
+st.write("Mock script ID:", selected_case.get("mock_script_id"))
+st.write("Selected script found before fallback:", selected_script is not None)
+
+if selected_script:
+    st.write("Loaded script case ID:", selected_script.get("case_id"))
+    st.write("Loaded script mock ID:", selected_script.get("mock_script_id"))
+
+if not selected_script and selected_case.get("mock_script_enabled"):
+    selected_script = {
+        "data": {
+            "script_type": "standard",
+            "prescriber_name": "Training prescriber",
+            "prescriber_address": "Training clinic",
+            "prescriber_phone": "",
+            "patient_name": "Training patient",
+            "patient_address": "",
+            "date": "",
+            "medicine": selected_case.get("title", ""),
+            "strength": "",
+            "directions": "See case details",
+            "quantity": "",
+            "repeats": "",
+            "notes": f"No linked mock script found for {selected_case.get('mock_script_id', '')}."
+        }
+    }
+
+st.write("Selected script found after fallback:", selected_script is not None)
 # =========================
 # Case banner
 # =========================
@@ -819,7 +847,10 @@ with b3:
         if selected_script:
             st.session_state.show_mock_script = not st.session_state.show_mock_script
         else:
-            st.warning("No mock script linked to this case.")
+            st.warning(
+                f"No mock script found for case {selected_case.get('case_id')} "
+                f"with mock_script_id={selected_case.get('mock_script_id')}"
+            )
 
 with b4:
     transcript = conversation_transcript(st.session_state.messages)
