@@ -139,6 +139,31 @@ st.markdown("""
     border-radius: 18px;
     padding: 24px;
 }
+
+.choice-card {
+    background: #ffffff;
+    border: 1px solid #e5e7eb;
+    border-radius: 18px;
+    padding: 18px;
+    text-align: center;
+    margin-bottom: 8px;
+}
+
+.choice-card-title {
+    font-size: 1.1rem;
+    font-weight: 600;
+    margin-bottom: 4px;
+}
+
+.choice-card-sub {
+    color: #6b7280;
+    font-size: 0.92rem;
+}
+
+.section-gap {
+    margin-top: 12px;
+    margin-bottom: 8px;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -312,33 +337,6 @@ def applicable_sim_rules(case: Dict[str, Any], overlay: Dict[str, Any], sim_rule
     priority_rank = {"critical": 0, "high": 1, "medium": 2, "low": 3}
     picked.sort(key=lambda r: priority_rank.get(r.get("priority", "medium"), 2))
     return picked
-
-
-def retrieve_cases(query: str, cases: List[Dict[str, Any]], overlays: List[Dict[str, Any]]) -> List[Tuple[float, Dict[str, Any]]]:
-    q = normalize_text(query)
-    overlay_map = {o["case_id"]: o for o in overlays}
-    results = []
-
-    for c in cases:
-        overlay = overlay_map.get(c["case_id"], {})
-        title = normalize_text(c.get("title", ""))
-        opening = normalize_text(c.get("patient_opening", ""))
-        tags = " ".join(c.get("tags", []))
-        overlay_blob = " ".join(overlay.get("intent_tags", [])) + " " + " ".join(overlay.get("legal_tags", [])) + " " + " ".join(overlay.get("triage_tags", [])) + " " + " ".join(overlay.get("emotion_tags", []))
-        case_type = normalize_text(c.get("case_type", ""))
-        difficulty = normalize_text(c.get("difficulty", ""))
-
-        s1 = fuzz.token_set_ratio(q, title)
-        s2 = fuzz.token_set_ratio(q, tags)
-        s3 = fuzz.token_set_ratio(q, opening)
-        s4 = fuzz.token_set_ratio(q, overlay_blob)
-        s5 = fuzz.token_set_ratio(q, case_type + " " + difficulty)
-
-        score = (0.33 * s1) + (0.18 * s2) + (0.18 * s3) + (0.26 * s4) + (0.05 * s5)
-        results.append((score, c))
-
-    results.sort(key=lambda x: x[0], reverse=True)
-    return results[:10]
 
 
 def build_system_prompt(case: Dict[str, Any], overlay: Dict[str, Any], behaviour: Dict[str, Any], sim_rules: List[Dict[str, Any]]) -> str:
@@ -537,14 +535,17 @@ if "messages" not in st.session_state:
 if "feedback_text" not in st.session_state:
     st.session_state.feedback_text = None
 
-if "retrieved_candidates" not in st.session_state:
-    st.session_state.retrieved_candidates = []
-
 if "roleplay_started" not in st.session_state:
     st.session_state.roleplay_started = False
 
 if "access_granted" not in st.session_state:
     st.session_state.access_granted = False
+
+if "start_mode" not in st.session_state:
+    st.session_state.start_mode = None
+
+if "random_case_id" not in st.session_state:
+    st.session_state.random_case_id = None
 
 # =========================
 # Access gate
@@ -569,7 +570,7 @@ if ACCESS_CODE:
 # Sidebar
 # =========================
 with st.sidebar:
-    st.markdown("## 💊 OSCE Controls")
+    st.markdown("## 💊 Settings")
 
     if client is None:
         st.error("No Gemini key detected")
@@ -578,54 +579,11 @@ with st.sidebar:
 
     model = st.text_input("Model", value=DEFAULT_MODEL)
 
-    mode = st.radio(
-        "Case selection",
-        ["Manual", "Random", "RAG search"]
-    )
-
     difficulty_filter = st.selectbox(
         "Difficulty",
         ["all", "easy", "medium", "hard"],
         index=0
     )
-
-    filtered_cases = cases
-    if difficulty_filter != "all":
-        filtered_cases = [c for c in cases if normalize_text(c.get("difficulty", "")) == difficulty_filter]
-
-    selected_case = None
-
-    if mode == "Manual":
-        labels = [f"{c['case_id']} — {c['title']}" for c in filtered_cases]
-        picked = st.selectbox("Choose case", labels)
-        selected_case = filtered_cases[labels.index(picked)] if labels else None
-
-    elif mode == "Random":
-        if st.button("🎲 Pick random case", use_container_width=True):
-            if filtered_cases:
-                chosen = random.choice(filtered_cases)
-                st.session_state.selected_case_id = chosen["case_id"]
-                st.session_state.messages = []
-                st.session_state.feedback_text = None
-                st.session_state.roleplay_started = False
-        if st.session_state.selected_case_id:
-            selected_case = next((c for c in cases if c["case_id"] == st.session_state.selected_case_id), None)
-
-    elif mode == "RAG search":
-        query = st.text_area("Describe a scenario", placeholder="e.g. angry patient, early repeat, controlled drug, NZ pharmacy")
-        if st.button("🔎 Search", use_container_width=True):
-            if query.strip():
-                st.session_state.retrieved_candidates = retrieve_cases(query, filtered_cases, overlays)
-        if st.session_state.retrieved_candidates:
-            labels = [f"{cand[1]['case_id']} — {cand[1]['title']} ({cand[0]:.1f})" for cand in st.session_state.retrieved_candidates]
-            chosen = st.selectbox("Matches", labels)
-            selected_case = st.session_state.retrieved_candidates[labels.index(chosen)][1]
-
-    if mode == "Manual" and selected_case:
-        st.session_state.selected_case_id = selected_case["case_id"]
-
-    if not selected_case and st.session_state.selected_case_id:
-        selected_case = next((c for c in cases if c["case_id"] == st.session_state.selected_case_id), None)
 
     admin_mode = st.toggle("Admin mode", value=False)
 
@@ -635,8 +593,87 @@ with st.sidebar:
 st.markdown("<div class='main-title'>NZ Community Pharmacy OSCE Simulator</div>", unsafe_allow_html=True)
 st.markdown("<div class='sub-title'>Patient roleplay for counselling, dispensing, legal, funding, and controlled drug cases.</div>", unsafe_allow_html=True)
 
+# =========================
+# Main-screen case selection
+# =========================
+st.markdown("## Start your OSCE practice")
+st.markdown("Choose whether to pick a case yourself or get a random one.")
+
+filtered_cases = cases
+if difficulty_filter != "all":
+    filtered_cases = [c for c in cases if normalize_text(c.get("difficulty", "")) == difficulty_filter]
+
+choice_col1, choice_col2 = st.columns(2)
+
+with choice_col1:
+    st.markdown("""
+    <div class="choice-card">
+        <div class="choice-card-title">🎯 Pick a case myself</div>
+        <div class="choice-card-sub">Choose a specific case from the full list</div>
+    </div>
+    """, unsafe_allow_html=True)
+    if st.button("Pick a case", use_container_width=True):
+        st.session_state.start_mode = "manual"
+        st.session_state.random_case_id = None
+        st.session_state.roleplay_started = False
+        st.session_state.messages = []
+        st.session_state.feedback_text = None
+
+with choice_col2:
+    st.markdown("""
+    <div class="choice-card">
+        <div class="choice-card-title">🎲 Give me a random case</div>
+        <div class="choice-card-sub">Get a surprise case based on the chosen difficulty</div>
+    </div>
+    """, unsafe_allow_html=True)
+    if st.button("Random case", use_container_width=True):
+        st.session_state.start_mode = "random"
+        st.session_state.roleplay_started = False
+        st.session_state.messages = []
+        st.session_state.feedback_text = None
+        if filtered_cases:
+            chosen = random.choice(filtered_cases)
+            st.session_state.random_case_id = chosen["case_id"]
+            st.session_state.selected_case_id = chosen["case_id"]
+
+selected_case = None
+
+if st.session_state.start_mode == "manual":
+    if filtered_cases:
+        st.markdown("<div class='section-gap'></div>", unsafe_allow_html=True)
+        labels = [f"{c['case_id']} — {c['title']}" for c in filtered_cases]
+        default_index = 0
+
+        if st.session_state.selected_case_id:
+            selected_indices = [i for i, c in enumerate(filtered_cases) if c["case_id"] == st.session_state.selected_case_id]
+            if selected_indices:
+                default_index = selected_indices[0]
+
+        picked = st.selectbox("Select a case", labels, index=default_index)
+        selected_case = filtered_cases[labels.index(picked)]
+        st.session_state.selected_case_id = selected_case["case_id"]
+
+elif st.session_state.start_mode == "random":
+    if st.session_state.random_case_id:
+        selected_case = next((c for c in cases if c["case_id"] == st.session_state.random_case_id), None)
+
+        subcol1, subcol2 = st.columns([1, 3])
+        with subcol1:
+            if st.button("🔄 Randomise again", use_container_width=True):
+                if filtered_cases:
+                    chosen = random.choice(filtered_cases)
+                    st.session_state.random_case_id = chosen["case_id"]
+                    st.session_state.selected_case_id = chosen["case_id"]
+                    st.session_state.roleplay_started = False
+                    st.session_state.messages = []
+                    st.session_state.feedback_text = None
+                    st.rerun()
+
+if not selected_case and st.session_state.selected_case_id:
+    selected_case = next((c for c in cases if c["case_id"] == st.session_state.selected_case_id), None)
+
 if not selected_case:
-    st.info("Choose a case from the sidebar to begin.")
+    st.info("Choose how you want to start.")
     st.stop()
 
 overlay = find_overlay(selected_case["case_id"], overlays)
