@@ -251,7 +251,7 @@ def normalize_text(s: str) -> str:
 
 
 def escape_html(text: str) -> str:
-    return html.escape(text).replace("\\n", "<br>")
+    return html.escape(text).replace("\n", "<br>")
 
 
 def find_overlay(case_id: str, overlays: List[Dict[str, Any]]) -> Dict[str, Any]:
@@ -372,7 +372,7 @@ def applicable_sim_rules(case: Dict[str, Any], overlay: Dict[str, Any], sim_rule
 
 
 def build_system_prompt(case: Dict[str, Any], overlay: Dict[str, Any], behaviour: Dict[str, Any], sim_rules: List[Dict[str, Any]]) -> str:
-    rules_text = "\\n".join(
+    rules_text = "\n".join(
         [f"- [{r.get('priority', 'medium').upper()}] {r.get('rule_text', '')}" for r in sim_rules[:40]]
     )
 
@@ -435,7 +435,7 @@ def build_feedback_prompt(case: Dict[str, Any], answer_key: Dict[str, Any], tran
         if m["role"] == "system":
             continue
         transcript_text.append(f"{m['role'].upper()}: {m['content']}")
-    transcript_blob = "\\n".join(transcript_text)
+    transcript_blob = "\n".join(transcript_text)
 
     return f"""
 You are assessing a New Zealand community pharmacy OSCE roleplay.
@@ -499,7 +499,7 @@ def call_model(client, model: str, system_prompt: str, messages: List[Dict[str, 
             continue
         speaker = "Pharmacist" if m["role"] == "user" else "Patient"
         transcript_lines.append(f"{speaker}: {m['content']}")
-    transcript_text = "\\n".join(transcript_lines)
+    transcript_text = "\n".join(transcript_lines)
 
     prompt = f"""
 {system_prompt}
@@ -534,7 +534,7 @@ def render_chat(messages: List[Dict[str, str]]):
         css_class = "user" if m["role"] == "user" else "assistant"
         chat_html.append(f"<div class='bubble {css_class}'>{escape_html(m['content'])}</div><div class='clear'></div>")
     chat_html.append("</div>")
-    st.markdown("\\n".join(chat_html), unsafe_allow_html=True)
+    st.markdown("\n".join(chat_html), unsafe_allow_html=True)
 
 
 def conversation_transcript(messages: List[Dict[str, str]]) -> str:
@@ -544,7 +544,7 @@ def conversation_transcript(messages: List[Dict[str, str]]) -> str:
             continue
         speaker = "Pharmacist" if m["role"] == "user" else "Patient"
         lines.append(f"{speaker}: {m['content']}")
-    return "\\n".join(lines)
+    return "\n".join(lines)
 
 
 def render_mock_script(script_data: Dict[str, Any]):
@@ -595,7 +595,6 @@ def render_mock_script(script_data: Dict[str, Any]):
 # Load data and client
 # =========================
 cases, scripts, behaviours, overlays, answer_keys, sim_rules = safe_load_data()
-answer_map = {a["case_id"]: a for a in answer_keys}
 script_map = {s["mock_script_id"]: s for s in scripts}
 client = get_gemini_client()
 
@@ -793,7 +792,7 @@ st.markdown(
 )
 
 # =========================
-# Main action buttons including mock viewer
+# Action buttons
 # =========================
 b1, b2, b3, b4 = st.columns([1, 1, 1, 1])
 
@@ -816,11 +815,11 @@ with b2:
         st.rerun()
 
 with b3:
-    if selected_script:
-        if st.button("📄 Mock prescription", use_container_width=True):
+    if st.button("📄 Mock prescription", use_container_width=True):
+        if selected_script:
             st.session_state.show_mock_script = not st.session_state.show_mock_script
-    else:
-        st.button("📄 Mock prescription", disabled=True, use_container_width=True)
+        else:
+            st.warning("No mock script linked to this case.")
 
 with b4:
     transcript = conversation_transcript(st.session_state.messages)
@@ -847,8 +846,9 @@ if admin_mode:
         st.write("**Reveal rules:**", selected_case.get("reveal_rules", []))
         st.write("**Pharmacy issue:**", selected_case.get("pharmacy_issue", ""))
         st.write("**Answer key:**", answer_key)
-        if selected_script:
-            st.write("**Mock script ID:**", selected_case.get("mock_script_id"))
+        st.write("**Case ID:**", selected_case.get("case_id"))
+        st.write("**Mock script ID:**", selected_case.get("mock_script_id"))
+        st.write("**Selected script found:**", selected_script is not None)
         st.markdown("</div>", unsafe_allow_html=True)
 
 # =========================
