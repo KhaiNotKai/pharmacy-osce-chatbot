@@ -211,7 +211,6 @@ def get_gemini_client():
     return genai.Client(api_key=api_key)
 
 
-@st.cache_data
 def load_jsonl(path: str) -> List[Dict[str, Any]]:
     rows = []
     with open(path, "r", encoding="utf-8") as f:
@@ -645,6 +644,16 @@ if ACCESS_CODE:
         st.stop()
 
 # =========================
+# Header
+# =========================
+st.markdown("<div class='main-title'>NZ Community Pharmacy OSCE Simulator</div>", unsafe_allow_html=True)
+st.markdown("<div class='sub-title'>Patient roleplay for counselling, dispensing, legal, funding, and controlled drug cases.</div>", unsafe_allow_html=True)
+
+if st.button("Clear app cache"):
+    st.cache_data.clear()
+    st.rerun()
+
+# =========================
 # Sidebar
 # =========================
 with st.sidebar:
@@ -664,12 +673,6 @@ with st.sidebar:
     )
 
     admin_mode = st.toggle("Admin mode", value=False)
-
-# =========================
-# Main header
-# =========================
-st.markdown("<div class='main-title'>NZ Community Pharmacy OSCE Simulator</div>", unsafe_allow_html=True)
-st.markdown("<div class='sub-title'>Patient roleplay for counselling, dispensing, legal, funding, and controlled drug cases.</div>", unsafe_allow_html=True)
 
 # =========================
 # Main-screen case selection
@@ -799,6 +802,7 @@ if not selected_script and selected_case.get("mock_script_enabled"):
     }
 
 st.write("Selected script found after fallback:", selected_script is not None)
+
 # =========================
 # Case banner
 # =========================
@@ -877,9 +881,6 @@ if admin_mode:
         st.write("**Reveal rules:**", selected_case.get("reveal_rules", []))
         st.write("**Pharmacy issue:**", selected_case.get("pharmacy_issue", ""))
         st.write("**Answer key:**", answer_key)
-        st.write("**Case ID:**", selected_case.get("case_id"))
-        st.write("**Mock script ID:**", selected_case.get("mock_script_id"))
-        st.write("**Selected script found:**", selected_script is not None)
         st.markdown("</div>", unsafe_allow_html=True)
 
 # =========================
