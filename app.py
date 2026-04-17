@@ -371,10 +371,34 @@ def applicable_sim_rules(case: Dict[str, Any], overlay: Dict[str, Any], sim_rule
     return picked
 
 
-def build_system_prompt(case: Dict[str, Any], overlay: Dict[str, Any], behaviour: Dict[str, Any], sim_rules: List[Dict[str, Any]]) -> str:
+def build_system_prompt(
+    case: Dict[str, Any],
+    overlay: Dict[str, Any],
+    behaviour: Dict[str, Any],
+    sim_rules: List[Dict[str, Any]],
+    script_data: Dict[str, Any] | None = None
+) -> str:
     rules_text = "\n".join(
         [f"- [{r.get('priority', 'medium').upper()}] {r.get('rule_text', '')}" for r in sim_rules[:40]]
     )
+
+    script_section = "No mock prescription linked."
+
+    if script_data:
+        script_section = f"""
+Prescriber: {script_data.get("prescriber_name", "")}
+Prescriber address: {script_data.get("prescriber_address", "")}
+Prescriber phone: {script_data.get("prescriber_phone", "")}
+Patient name: {script_data.get("patient_name", "")}
+Patient address: {script_data.get("patient_address", "")}
+Date: {script_data.get("date", "")}
+Medicine: {script_data.get("medicine", "")}
+Strength: {script_data.get("strength", "")}
+Directions: {script_data.get("directions", "")}
+Quantity: {script_data.get("quantity", "")}
+Repeats: {script_data.get("repeats", "")}
+Notes: {script_data.get("notes", "")}
+""".strip()
 
     return f"""
 You are roleplaying as a New Zealand community pharmacy patient or caregiver in an OSCE style simulation.
@@ -398,6 +422,9 @@ Hidden facts: {json.dumps(case.get("hidden_facts", []), ensure_ascii=False)}
 Reveal rules: {json.dumps(case.get("reveal_rules", []), ensure_ascii=False)}
 Background issue: {case.get("pharmacy_issue", "")}
 Ideal patient behaviour: {case.get("ideal_patient_behaviour", "")}
+
+SCRIPT DETAILS
+{script_section}
 
 RETRIEVAL OVERLAY
 Intent tags: {json.dumps(overlay.get("intent_tags", []), ensure_ascii=False)}
@@ -426,6 +453,7 @@ Final execution rules:
 5. If the pharmacist is blunt, judgmental, or confusing, become less open or more frustrated depending on persona.
 6. Stay consistent with facts already revealed.
 7. Sound natural, not like a checklist or textbook.
+8. If a mock prescription is provided, keep your identity and prescription-related facts consistent with it unless the case is explicitly designed as a mismatch or wrong-patient scenario.
 """.strip()
 
 
@@ -896,7 +924,8 @@ else:
             case=selected_case,
             overlay=overlay,
             behaviour=behaviour,
-            sim_rules=sim_rule_set
+            sim_rules=sim_rule_set,
+            script_data=selected_script["data"] if selected_script and "data" in selected_script else None
         )
 
         with st.spinner("Patient is responding..."):
